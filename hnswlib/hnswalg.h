@@ -17,16 +17,16 @@ namespace hnswlib {
     class HierarchicalNSW : public AlgorithmInterface<dist_t> {
     public:
         static const tableint max_update_element_locks = 65536;
-        HierarchicalNSW(SpaceInterface<dist_t> *s) {
+        HierarchicalNSW(SpaceInterface<dist_t> *s, void* buffer=nullptr) : buffer(buffer) {
 
         }
 
-        HierarchicalNSW(SpaceInterface<dist_t> *s, const std::string &location, bool nmslib = false, size_t max_elements=0) {
+        HierarchicalNSW(SpaceInterface<dist_t> *s, const std::string &location, bool nmslib = false, size_t max_elements=0, void* buffer = nullptr) : buffer(buffer) {
             loadIndex(location, s, max_elements);
         }
 
-        HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements, size_t M = 16, size_t ef_construction = 200, size_t random_seed = 100) :
-                link_list_locks_(max_elements), link_list_update_locks_(max_update_element_locks), element_levels_(max_elements) {
+        HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements, size_t M = 16, size_t ef_construction = 200, size_t random_seed = 100, void* buffer = nullptr) :
+                link_list_locks_(max_elements), link_list_update_locks_(max_update_element_locks), element_levels_(max_elements), buffer(buffer) {
             max_elements_ = max_elements;
 
             has_deletions_=false;
@@ -54,7 +54,12 @@ namespace hnswlib {
 
             cur_element_count = 0;
 
-            visited_list_pool_ = new VisitedListPool(1, max_elements);
+            if (this->buffer != nullptr) {
+                visited_list_pool_ = new(buffer) VisitedListPool(1, max_elements, buffer);
+                this->buffer = static_cast<char*>(buffer) + sizeof(VisitedListPool);
+            } else {
+                visited_list_pool_ = new VisitedListPool(1, max_elements);
+            }
 
 
 
@@ -133,6 +138,8 @@ namespace hnswlib {
 
         std::default_random_engine level_generator_;
         std::default_random_engine update_probability_generator_;
+
+        void* buffer = nullptr;
 
         inline labeltype getExternalLabel(tableint internal_id) const {
             labeltype return_label;
@@ -570,7 +577,12 @@ namespace hnswlib {
 
 
             delete visited_list_pool_;
-            visited_list_pool_ = new VisitedListPool(1, new_max_elements);
+            if (this->buffer != nullptr) {
+                visited_list_pool_ = new(buffer) VisitedListPool(1, new_max_elements, buffer);
+                this->buffer = static_cast<char*>(buffer) + sizeof(VisitedListPool);
+            } else {
+                visited_list_pool_ = new VisitedListPool(1, new_max_elements);
+            }
 
 
             element_levels_.resize(new_max_elements);
@@ -705,7 +717,12 @@ namespace hnswlib {
             std::vector<std::mutex>(max_update_element_locks).swap(link_list_update_locks_);
 
 
-            visited_list_pool_ = new VisitedListPool(1, max_elements);
+            if (this->buffer != nullptr) {
+                visited_list_pool_ = new(buffer) VisitedListPool(1, max_elements, buffer);
+                this->buffer = static_cast<char*>(buffer) + sizeof(VisitedListPool);
+            } else {
+                visited_list_pool_ = new VisitedListPool(1, max_elements);
+            }
 
 
             linkLists_ = (char **) malloc(sizeof(void *) * max_elements);

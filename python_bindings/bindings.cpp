@@ -85,17 +85,32 @@ inline void ParallelFor(size_t start, size_t end, size_t numThreads, Function fn
 template<typename dist_t, typename data_t=float>
 class Index {
 public:
-  Index(const std::string &space_name, const int dim) :
+  Index(const std::string &space_name, const int dim, void* buffer=nullptr) :
   space_name(space_name), dim(dim) {
     normalize=false;
     if(space_name=="l2") {
-      l2space = new hnswlib::L2Space(dim);
+      if (buffer != nullptr) {
+        l2space = new(buffer) hnswlib::L2Space(dim);
+        buffer = static_cast<char*>(buffer) + sizeof(hnswlib::L2Space);
+      } else {
+        l2space = new hnswlib::L2Space(dim);
+      }
     }
     else if(space_name=="ip") {
-      l2space = new hnswlib::InnerProductSpace(dim);
+      if (buffer != nullptr) {
+        l2space = new(buffer) hnswlib::InnerProductSpace(dim);
+        buffer = static_cast<char*>(buffer) + sizeof(hnswlib::InnerProductSpace);
+      } else {
+        l2space = new hnswlib::InnerProductSpace(dim);
+      }
     }
     else if(space_name=="cosine") {
-      l2space = new hnswlib::InnerProductSpace(dim);
+      if (buffer != nullptr) {
+        l2space = new(buffer) hnswlib::InnerProductSpace(dim);
+        buffer = static_cast<char*>(buffer) + sizeof(hnswlib::InnerProductSpace);
+      } else {
+        l2space = new hnswlib::InnerProductSpace(dim);
+      }
       normalize=true;
     } else {
       throw new std::runtime_error("Space name must be one of l2, ip, or cosine.");
@@ -129,12 +144,17 @@ public:
           delete appr_alg;
   }
 
-    void init_new_index(const size_t maxElements, const size_t M, const size_t efConstruction, const size_t random_seed) {
+    void init_new_index(const size_t maxElements, const size_t M, const size_t efConstruction, const size_t random_seed, void* buffer=nullptr) {
         if (appr_alg) {
             throw new std::runtime_error("The index is already initiated.");
         }
         cur_l = 0;
-        appr_alg = new hnswlib::HierarchicalNSW<dist_t>(l2space, maxElements, M, efConstruction, random_seed);
+        if (buffer != nullptr) {
+            appr_alg = new(buffer) hnswlib::HierarchicalNSW<dist_t>(l2space, maxElements, M, efConstruction, random_seed);
+            buffer = static_cast<char*>(buffer) + sizeof(hnswlib::HierarchicalNSW<dist_t);
+        } else {
+            appr_alg = new hnswlib::HierarchicalNSW<dist_t>(l2space, maxElements, M, efConstruction, random_seed);
+        }
         index_inited = true;
         ep_added = false;
         appr_alg->ef_ = default_ef;
@@ -157,12 +177,17 @@ public:
         appr_alg->saveIndex(path_to_index);
     }
 
-    void loadIndex(const std::string &path_to_index, size_t max_elements) {
+    void loadIndex(const std::string &path_to_index, size_t max_elements, void* buffer=nullptr) {
       if (appr_alg) {
           std::cerr<<"Warning: Calling load_index for an already inited index. Old index is being deallocated.";
           delete appr_alg;
       }
-      appr_alg = new hnswlib::HierarchicalNSW<dist_t>(l2space, path_to_index, false, max_elements);
+      if (buffer != nullptr) {
+        appr_alg = new(buffer) hnswlib::HierarchicalNSW<dist_t>(l2space, path_to_index, false, max_elements);
+        buffer = static_cast<char*>(buffer) + sizeof(hnswlib::HierarchicalNSW<dist_t>);
+      } else {
+        appr_alg = new hnswlib::HierarchicalNSW<dist_t>(l2space, path_to_index, false, max_elements);
+      }
       cur_l = appr_alg->cur_element_count;
       index_inited = true;
     }
@@ -430,7 +455,7 @@ public:
     }
 
 
-    static Index<float> * createFromParams(const py::dict d) {
+    static Index<float> * createFromParams(const py::dict d, void* buffer=nullptr) {
 
       // check serialization version
       assert_true(((int)py::int_(Index<float>::ser_version)) >= d["ser_version"].cast<int>(), "Invalid serialization version!");
@@ -439,14 +464,24 @@ public:
       auto dim_=d["dim"].cast<int>();
       auto index_inited_=d["index_inited"].cast<bool>();
 
-      Index<float> *new_index = new Index<float>(space_name_, dim_);
+      if (buffer != nullptr) {
+        Index<float> *new_index = new(buffer) Index<float>(space_name_, dim_, buffer);
+        buffer = static_cast<char*>(buffer) + sizeof(Index<float>);
+      } else {
+        Index<float> *new_index = new Index<float>(space_name_, dim_);
+      }
 
       /*  TODO: deserialize state of random generators into new_index->level_generator_ and new_index->update_probability_generator_  */
       /*        for full reproducibility / state of generators is serialized inside Index::getIndexParams                      */
       new_index->seed = d["seed"].cast<size_t>();
 
       if (index_inited_){
-        new_index->appr_alg = new hnswlib::HierarchicalNSW<dist_t>(new_index->l2space, d["max_elements"].cast<size_t>(), d["M"].cast<size_t>(), d["ef_construction"].cast<size_t>(), new_index->seed);
+        if (buffer != nullptr) {
+            new_index->appr_alg = new(buffer) hnswlib::HierarchicalNSW<dist_t>(new_index->l2space, d["max_elements"].cast<size_t>(), d["M"].cast<size_t>(), d["ef_construction"].cast<size_t>(), new_index->seed);
+            buffer = static_cast<char*>(buffer) + sizeof(hnswlib::HierarchicalNSW<dist_t>)
+        } else {
+            new_index->appr_alg = new hnswlib::HierarchicalNSW<dist_t>(new_index->l2space, d["max_elements"].cast<size_t>(), d["M"].cast<size_t>(), d["ef_construction"].cast<size_t>(), new_index->seed);
+        }
         new_index->cur_l = d["cur_element_count"].cast<size_t>();
       }
 
@@ -461,8 +496,8 @@ public:
       return new_index;
     }
 
-    static Index<float> * createFromIndex(const Index<float> & index) {
-        return createFromParams(index.getIndexParams());
+    static Index<float> * createFromIndex(const Index<float> & index, void* buffer=nullptr) {
+        return createFromParams(index.getIndexParams(), buffer);
     }
 
     void setAnnData(const py::dict d) { /* WARNING: Index::setAnnData is not thread-safe with Index::addItems */
@@ -537,7 +572,7 @@ public:
       }
 }
 
-    py::object knnQuery_return_numpy(py::object input, size_t k = 1, int num_threads = -1) {
+    py::object knnQuery_return_numpy(py::object input, size_t k = 1, int num_threads = -1, void* alloc_buffer=nullptr) {
 
         py::array_t < dist_t, py::array::c_style | py::array::forcecast > items(input);
         auto buffer = items.request();
@@ -568,8 +603,15 @@ public:
                 num_threads=1;
             }
 
-            data_numpy_l = new hnswlib::labeltype[rows * k];
-            data_numpy_d = new dist_t[rows * k];
+            if (alloc_buffer != nullptr) {
+                data_numpy_l = new(alloc_buffer) hnswlib::labeltype[rows * k];
+                alloc_buffer = static_cast<char*>(alloc_buffer) + sizeof(hnswlib::labeltype[rows * k]);
+                data_numpy_d = new(alloc_buffer) dist_t[rows * k];
+                alloc_buffer = static_cast<char*>(alloc_buffer) + sizeof(dist_t[rows * k]);
+            } else {
+                data_numpy_l = new hnswlib::labeltype[rows * k];
+                data_numpy_d = new dist_t[rows * k];
+            }
 
             if(normalize==false) {
                 ParallelFor(0, rows, num_threads, [&](size_t row, size_t threadId) {
@@ -658,19 +700,19 @@ PYBIND11_PLUGIN(hnswlib) {
         py::module m("hnswlib");
 
         py::class_<Index<float>>(m, "Index")
-        .def(py::init(&Index<float>::createFromParams), py::arg("params"))
+        .def(py::init(&Index<float>::createFromParams), py::arg("params"), py::arg("buffer")=nullptr)
            /* WARNING: Index::createFromIndex is not thread-safe with Index::addItems */
-        .def(py::init(&Index<float>::createFromIndex), py::arg("index"))
-        .def(py::init<const std::string &, const int>(), py::arg("space"), py::arg("dim"))
-        .def("init_index", &Index<float>::init_new_index, py::arg("max_elements"), py::arg("M")=16, py::arg("ef_construction")=200, py::arg("random_seed")=100)
-        .def("knn_query", &Index<float>::knnQuery_return_numpy, py::arg("data"), py::arg("k")=1, py::arg("num_threads")=-1)
+        .def(py::init(&Index<float>::createFromIndex), py::arg("index"), py::arg("buffer")=nullptr)
+        .def(py::init<const std::string &, const int>(), py::arg("space"), py::arg("dim"), py::args("buffer")=nullptr)
+        .def("init_index", &Index<float>::init_new_index, py::arg("max_elements"), py::arg("M")=16, py::arg("ef_construction")=200, py::arg("random_seed")=100, py::arg("buffer")=nullptr)
+        .def("knn_query", &Index<float>::knnQuery_return_numpy, py::arg("data"), py::arg("k")=1, py::arg("num_threads")=-1, py::arg("buffer")=nullptr)
         .def("add_items", &Index<float>::addItems, py::arg("data"), py::arg("ids") = py::none(), py::arg("num_threads")=-1)
         .def("get_items", &Index<float, float>::getDataReturnList, py::arg("ids") = py::none())
         .def("get_ids_list", &Index<float>::getIdsList)
         .def("set_ef", &Index<float>::set_ef, py::arg("ef"))
         .def("set_num_threads", &Index<float>::set_num_threads, py::arg("num_threads"))
         .def("save_index", &Index<float>::saveIndex, py::arg("path_to_index"))
-        .def("load_index", &Index<float>::loadIndex, py::arg("path_to_index"), py::arg("max_elements")=0)
+        .def("load_index", &Index<float>::loadIndex, py::arg("path_to_index"), py::arg("max_elements")=0, py::args("buffer")=nullptr)
         .def("mark_deleted", &Index<float>::markDeleted, py::arg("label"))
         .def("resize_index", &Index<float>::resizeIndex, py::arg("new_size"))
         .def("get_max_elements", &Index<float>::getMaxElements)

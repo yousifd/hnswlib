@@ -226,8 +226,10 @@ int main(int argc, char **argv)
         printf("Loaded config: N=%d, d_mult=%d, Nq=%d, dim=%d, K=%d\n", N, dummy_data_multiplier, N_queries, d, K);
     }
 
+    void* buffer = malloc(4294967296);
+
     hnswlib::L2Space l2space(d);
-    hnswlib::HierarchicalNSW<float> appr_alg(&l2space, N + 1, M, efConstruction);
+    hnswlib::HierarchicalNSW<float> appr_alg(&l2space, N + 1, M, efConstruction, 100, buffer=buffer);
 
     std::vector<float> dummy_batch = load_batch<float>(path + "batch_dummy_00.bin", N * d);
 
@@ -270,9 +272,12 @@ int main(int argc, char **argv)
     std::vector<float> final_batch = load_batch<float>(path + "batch_final.bin", N * d);
     
     stopw.reset();
-    ParallelFor(0, N, num_threads, [&](size_t i, size_t threadId) {
-                    appr_alg.addPoint((void *)(final_batch.data() + i * d), i);
-                });
+    for (int i = 0; i < N; i++) {
+        appr_alg.addPoint((void*)(final_batch.data() + i * d), i);
+    }
+    // ParallelFor(0, N, num_threads, [&](size_t i, size_t threadId) {
+    //                 appr_alg.addPoint((void *)(final_batch.data() + i * d), i);
+    //             });
     std::cout<<"Finished. Time taken:" << stopw.getElapsedTimeMicro()*1e-6 << " s\n";
     std::cout << "Running tests\n";
     std::vector<float> queries_batch = load_batch<float>(path + "queries.bin", N_queries * d);
@@ -293,6 +298,8 @@ int main(int argc, char **argv)
         std::cout << "Test iteration " << i << "\n";
         test_vs_recall(queries_batch, N_queries, appr_alg, d, answers, K);
     }
+
+    free(buffer);
 
     return 0;
 };

@@ -11,11 +11,17 @@ namespace hnswlib {
         vl_type curV;
         vl_type *mass;
         unsigned int numelements;
+        void* buffer = nullptr;
 
-        VisitedList(int numelements1) {
+        VisitedList(int numelements1, void* buffer=nullptr) : buffer(buffer) {
             curV = -1;
             numelements = numelements1;
-            mass = new vl_type[numelements];
+            if (this->buffer != nullptr) {
+                mass = new(this->buffer) vl_type[numelements];
+                buffer  = static_cast<char*>(this->buffer) + sizeof(vl_type[numelements]);
+            } else {
+                mass = new vl_type[numelements];
+            }
         }
 
         void reset() {
@@ -38,9 +44,10 @@ namespace hnswlib {
         std::deque<VisitedList *> pool;
         std::mutex poolguard;
         int numelements;
+        void* buffer = nullptr;
 
     public:
-        VisitedListPool(int initmaxpools, int numelements1) {
+        VisitedListPool(int initmaxpools, int numelements1, void* buffer=nullptr) : buffer(buffer) {
             numelements = numelements1;
             for (int i = 0; i < initmaxpools; i++)
                 pool.push_front(new VisitedList(numelements));
@@ -54,7 +61,12 @@ namespace hnswlib {
                     rez = pool.front();
                     pool.pop_front();
                 } else {
-                    rez = new VisitedList(numelements);
+                    if (this->buffer != nullptr) {
+                        rez = new(this->buffer) VisitedList(numelements, buffer);
+                        this->buffer = static_cast<char*>(this->buffer) + sizeof(VisitedList);
+                    } else {
+                        rez = new VisitedList(numelements);
+                    }
                 }
             }
             rez->reset();
